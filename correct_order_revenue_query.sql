@@ -1,7 +1,6 @@
 WITH OrderDetails AS (
     SELECT 
         oh.ORDER_ID,
-        oi.PRODUCT_ID,
         oi.ORDER_ITEM_SEQ_ID
     FROM order_header oh
     INNER JOIN order_item oi ON oi.ORDER_ID = oh.ORDER_ID AND oi.status_id = 'ITEM_COMPLETED'
