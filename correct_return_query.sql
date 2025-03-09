@@ -36,13 +36,6 @@ ReturnAdjustments AS (
                  AND ra.RETURN_TYPE_ID = 'RTN_REFUND' THEN ra.AMOUNT ELSE 0 END) AS TOTAL_TAX_REFUND
     FROM return_adjustment ra
     GROUP BY ra.RETURN_ID, ra.RETURN_ITEM_SEQ_ID
-),
-ReturnIdentification AS (
-    SELECT 
-        rii.RETURN_ID,
-        rii.ID_VALUE AS SHOPIFY_RETURN_ID
-    FROM return_identification rii
-    WHERE rii.RETURN_IDENTIFICATION_TYPE_ID = 'SHOPIFY_RTN_ID'
 )
 SELECT DISTINCT 
     sum(ra.DISCOUNT),
@@ -52,7 +45,6 @@ FROM ReturnDetails rd
 JOIN OrderDetails od ON rd.HC_ORDER_ID = od.ORDER_ID
 JOIN ShipmentDetails sd ON rd.HC_ORDER_ID = sd.ORDER_ID AND rd.HC_ORDER_ITEM_SEQ_ID = sd.ORDER_ITEM_SEQ_ID
 LEFT JOIN ReturnAdjustments ra ON rd.RETURN_ID = ra.RETURN_ID AND rd.HC_ORDER_ITEM_SEQ_ID = ra.RETURN_ITEM_SEQ_ID
-LEFT JOIN ReturnIdentification ri2 ON rd.RETURN_ID = ri2.RETURN_ID
 JOIN order_item oi2 ON rd.HC_ORDER_ID = oi2.ORDER_ID AND rd.HC_ORDER_ITEM_SEQ_ID = oi2.ORDER_ITEM_SEQ_ID
 and rd.return_date BETWEEN '2023-05-01' AND '2024-05-31'
 ORDER BY rd.RETURN_DATE;
