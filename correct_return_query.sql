@@ -1,50 +1,57 @@
-WITH ReturnDetails AS (
-    SELECT 
-        ri.RETURN_ID,
-        ri.ORDER_ID AS HC_ORDER_ID,
-        ri.ORDER_ITEM_SEQ_ID AS HC_ORDER_ITEM_SEQ_ID,
-        ri.RETURN_PRICE AS RETURN_ITEM,
-        rh.RETURN_DATE
-    FROM return_item ri
-    JOIN return_header rh ON ri.RETURN_ID = rh.RETURN_ID
-    WHERE ri.STATUS_ID = 'RETURN_COMPLETED'
-),
-OrderDetails AS (
-    SELECT 
-        oh.ORDER_ID
-    FROM order_header oh
-    WHERE oh.PRODUCT_STORE_ID = 'BJ_STORE'
-),
-ShipmentDetails AS (
-    SELECT 
-        os.ORDER_ID,
-        os.ORDER_ITEM_SEQ_ID,
-        CAST(ss.STATUS_DATE AS DATE) AS SHIP_DATE
-    FROM order_shipment os
-    JOIN shipment_status ss ON os.SHIPMENT_ID = ss.SHIPMENT_ID 
-    WHERE ss.STATUS_ID = 'SHIPMENT_SHIPPED'
-),
-ReturnAdjustments AS (
-    SELECT 
-        ra.RETURN_ID,
-        ra.RETURN_ITEM_SEQ_ID,
-        SUM(CASE WHEN ra.RETURN_ADJUSTMENT_TYPE_ID = 'RET_EXT_PRM_ADJ' AND ra.RETURN_TYPE_ID = 'RTN_REFUND' 
-                 THEN ra.AMOUNT ELSE 0 END) AS DISCOUNT,
-        SUM(CASE WHEN ra.RETURN_ADJUSTMENT_TYPE_ID = 'RET_SALES_TAX_ADJ' 
-                 THEN ra.AMOUNT ELSE 0 END) +
-        SUM(CASE WHEN ra.RETURN_ADJUSTMENT_TYPE_ID = 'RET_SHIPPING_ADJ' 
-                 AND ra.RETURN_TYPE_ID = 'RTN_REFUND' THEN ra.AMOUNT ELSE 0 END) AS TOTAL_TAX_REFUND
-    FROM return_adjustment ra
-    GROUP BY ra.RETURN_ID, ra.RETURN_ITEM_SEQ_ID
+with return_info as (
+    select
+        DISTINCT ri.ORDER_ID,
+        ri.ORDER_ITEM_SEQ_ID,
+        cast(rh.return_date as date) as RETURN_DATE,
+        ri.RETURN_PRICE as RETURN_ITEM,
+        (
+            select sum(ra.amount)
+            from return_adjustment ra
+            where
+                ri.RETURN_ID = ra.RETURN_ID
+                and ri.RETURN_ITEM_SEQ_ID = ra.RETURN_ITEM_SEQ_ID
+                and ra.RETURN_ADJUSTMENT_TYPE_ID = 'RET_EXT_PRM_ADJ'
+                and ra.RETURN_TYPE_ID = 'RTN_REFUND'
+        ) as DISCOUNT,
+        (
+            case
+                when ra.RETURN_ADJUSTMENT_TYPE_ID = 'RET_SALES_TAX_ADJ' then ra.AMOUNT
+                else 0
+            end + case
+                when ra.RETURN_ADJUSTMENT_TYPE_ID = 'RET_SHIPPING_ADJ' and ra.RETURN_TYPE_ID = 'RTN_REFUND' then ra.AMOUNT
+                else 0
+            end
+        ) as TOTAL_TAX_REFUND,
+        (ri.RETURN_PRICE) + ifnull(ra.amount , 0) as RETURNED_TOTAL
+    from
+        return_item ri
+    left join return_adjustment ra on
+        ri.RETURN_ID = ra.RETURN_ID
+        and ri.RETURN_ITEM_SEQ_ID = ra.RETURN_ITEM_SEQ_ID
+    join order_header oh on
+        ri.ORDER_ID = oh.ORDER_ID
+    join return_header rh on
+        ri.RETURN_ID = rh.return_id
+    join order_item oi2 on
+        oi2.ORDER_ID = ri.ORDER_ID
+        and oi2.ORDER_ITEM_SEQ_ID = ri.ORDER_ITEM_SEQ_ID
+    join order_shipment os on
+        oi2.ORDER_ID = os.ORDER_ID
+        and oi2.ORDER_ITEM_SEQ_ID = os.ORDER_ITEM_SEQ_ID
+    join shipment_status ss on
+        os.SHIPMENT_ID = ss.SHIPMENT_ID
+        and ss.STATUS_ID = 'SHIPMENT_SHIPPED'
+    where
+        ri.STATUS_ID = 'RETURN_COMPLETED'
+        and oh.PRODUCT_STORE_ID = 'BJ_STORE'
+        and DATE(rh.return_date) between '2025-02-01' and '2025-02-28'
 )
-SELECT DISTINCT 
-    sum(ra.DISCOUNT),
-    sum(ra.TOTAL_TAX_REFUND),
-    sum(rd.RETURN_ITEM + IFNULL(ra.DISCOUNT, 0)) AS RETURNED_TOTAL
-FROM ReturnDetails rd
-JOIN OrderDetails od ON rd.HC_ORDER_ID = od.ORDER_ID
-JOIN ShipmentDetails sd ON rd.HC_ORDER_ID = sd.ORDER_ID AND rd.HC_ORDER_ITEM_SEQ_ID = sd.ORDER_ITEM_SEQ_ID
-LEFT JOIN ReturnAdjustments ra ON rd.RETURN_ID = ra.RETURN_ID AND rd.HC_ORDER_ITEM_SEQ_ID = ra.RETURN_ITEM_SEQ_ID
-JOIN order_item oi2 ON rd.HC_ORDER_ID = oi2.ORDER_ID AND rd.HC_ORDER_ITEM_SEQ_ID = oi2.ORDER_ITEM_SEQ_ID
-and rd.return_date BETWEEN '2023-05-01' AND '2024-05-31'
-ORDER BY rd.RETURN_DATE;
+select
+    sum(ri.RETURN_ITEM),
+    sum(ri.DISCOUNT),
+    sum(ri.TOTAL_TAX_REFUND),
+    sum(ri.RETURNED_TOTAL)
+from
+    return_info ri
+order by
+    ri.RETURN_DATE;
